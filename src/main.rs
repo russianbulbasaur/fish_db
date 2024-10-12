@@ -81,5 +81,69 @@ fn tables(filename:&String){
         cell_pointers.push(u16::from_be_bytes(buff));
         table_num -= 1;
     }
-    println!("{}\n{}\n{}",cell_pointers[0],cell_pointers[1],cell_pointers[2]);
+    for record_pointer in cell_pointers{
+        let _ = db_file.seek(SeekFrom::Start(record_pointer as u64));
+        let record_size = decode_varint_from_offset(&mut db_file);
+        //    println!("record size {}",record_size);
+        let row_id = decode_varint_from_offset(&mut db_file);
+        //   println!("row id {}",row_id);
+        let record_header_size = decode_varint_from_offset(&mut db_file);
+        //   println!("record header size {}",record_header_size);
+        let (type_serial,type_size) = decode_serial_type_and_size(&mut db_file);
+        //  println!("serial for type {} size {}",type_serial,type_size);
+        let (name_serial,name_size) = decode_serial_type_and_size(&mut db_file);
+        //  println!("serial for name {} size {}",name_serial,name_size);
+        let (tbl_name_serial,tbl_name_size) = decode_serial_type_and_size(&mut db_file);
+        // println!("serial to tbl_name {} size {}",tbl_name_serial,tbl_name_size);
+        let (rootpage_serial,rootpage_size) = decode_serial_type_and_size(&mut db_file);
+        // println!("serial for rootpage {} size {}",rootpage_serial,rootpage_size);
+        let (sql_serial,sql_size) = decode_serial_type_and_size(&mut db_file);
+        //println!("serial for sql {} size {}",sql_serial,sql_size);
+
+        let _ = db_file.seek(SeekFrom::Current(type_size as i64));
+        let mut name_buff = [0;1];
+        let mut count = 0;
+        let mut name_vec = Vec::new();
+        while count<name_size{
+            db_file.read_exact(&mut name_buff).unwrap();
+            count += 1;
+            name_vec.push(name_buff[0]);
+        }
+        let name = String::from_utf8(name_vec).unwrap();
+        print!("{} ",name);
+    }
+}
+
+
+fn decode_serial_type_and_size(db_file: &mut File) -> (u64, u64){
+    let serial_type =  decode_varint_from_offset(db_file);
+    let size;
+    if serial_type>=12 && serial_type%2==0{
+        size = (serial_type-12)/2;
+    }else if serial_type>=13 && serial_type%2!=0{
+        size = (serial_type-13)/2;
+    }else {
+        size = 0;
+    }
+    return (serial_type,size);
+}
+
+fn decode_varint_from_offset(db_file: &mut File) -> u64 {
+    let mut byte_buffer = [0; 1]; // Buffer to read one byte at a time
+    let mut result: u64 = 0;
+
+    loop {
+        db_file.read_exact(&mut byte_buffer).unwrap(); // Read a byte
+        let byte = byte_buffer[0] & 0b01111111; // Mask the lower 7 bits
+
+        // Shift left by 7 before adding the next byte
+        result = (result << 7) | (byte as u64);
+
+        // If the MSB is 0, this is the last byte
+        if byte_buffer[0] & 0b10000000 == 0 {
+            break;
+        }
+    }
+
+    result
 }
