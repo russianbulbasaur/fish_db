@@ -1,4 +1,3 @@
-use fish_db::db_mod::db;
 use anyhow::{bail, Result};
 use fish_db::db_mod::db::DB;
 
@@ -28,10 +27,10 @@ fn show_db_info(database:DB){
 }
 
 
-fn show_tables(database:DB){
+fn show_tables(_database:DB){
 
 }
 
-fn try_parsing(database:DB){
+fn try_parsing(_database:DB){
 
 }

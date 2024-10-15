@@ -3,6 +3,7 @@ use std::io::Read;
 use crate::pager_mod::pager::Page;
 use crate::table_mod::table::Table;
 
+#[allow(unused)]
 struct Header{
     sql_format:String,
     page_size:u16,
@@ -18,10 +19,10 @@ impl Header{
         self.page_size
     }
 }
-
-pub struct DB <'a>{
+#[allow(unused)]
+pub struct DB{
     header:Header,
-    pub file:&'a mut File,
+    pub file:File,
     tables:Vec<Table>
 }
 
@@ -42,11 +43,11 @@ impl DB{
             min_embedded_payload_fraction: 0,
         };
         let root_page = Page::new_header_page(&mut db_file,page_size);
-
+        root_page.read_cells();
         let tables:Vec<Table> = Vec::new();
         DB{
             header,
-            file:&mut db_file,
+            file:db_file,
             tables
         }
     }
@@ -54,9 +55,5 @@ impl DB{
 
     pub fn get_page_size(&self) -> u16{
         self.header.get_page_size()
-    }
-
-    pub fn read_page(&self,page:u64) -> Page {
-        Page::new(self,page)
     }
 }
