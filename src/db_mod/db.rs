@@ -1,5 +1,7 @@
 use std::fs::File;
 use std::io::Read;
+use crate::pager_mod::pager::Page;
+use crate::table_mod::table::Table;
 
 struct Header{
     sql_format:String,
@@ -17,8 +19,9 @@ impl Header{
     }
 }
 
-pub struct DB{
+pub struct DB <'a>{
    header:Header,
+   pub file:&'a mut File
 }
 
 impl DB{
@@ -37,10 +40,19 @@ impl DB{
             maximum_embedded_payload_fraction: 0,
             min_embedded_payload_fraction: 0,
         };
-        DB{header}
+        DB{header,
+        file:&mut db_file}
+    }
+
+    pub fn read_tables() -> Vec<Table>{
+
     }
 
     pub fn get_page_size(&self) -> u16{
         self.header.get_page_size()
+    }
+
+    pub fn read_page(&self,page:u64) -> Page {
+        Page::new(self,page)
     }
 }

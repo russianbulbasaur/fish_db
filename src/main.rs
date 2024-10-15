@@ -16,5 +16,22 @@ fn main() -> Result<()> {
 }
 
 fn parse_command(database:DB,command:&str){
+    match command {
+        ".dbinfo" => show_db_info(database),
+        ".tables" => show_tables(database),
+        _ => try_parsing(database)
+    }
+}
+
+fn show_db_info(database:DB){
+    println!("database page size: {}",database.get_page_size());
+}
+
+
+fn show_tables(database:DB){
+
+}
+
+fn try_parsing(database:DB){
 
 }
