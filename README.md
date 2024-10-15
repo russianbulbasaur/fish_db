@@ -1,2 +1,5 @@
 # fish_db
-A toy sqlite like database written in rust.
+A sqlite db parser.
+
+Usage :
+cargo run <database file> <option/command>
