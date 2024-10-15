@@ -2,4 +2,4 @@
 A sqlite db parser.
 
 Usage :
-cargo run <database file> <option/command>
+cargo run <database file path> <option/command>
