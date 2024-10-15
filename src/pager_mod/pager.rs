@@ -11,7 +11,7 @@ pub struct Page{
     //just in internal nodes
     pub child_page_pointer:u32,
     pub contents:Vec<u8>,
-    pub content_offset:u8
+    pub content_offset:u64
 }
 
 impl Page{
@@ -27,7 +27,7 @@ impl Page{
         let cell_content_start_address = u16::from_be_bytes([page_buffer[5],page_buffer[6]]);
         let fragmented_free_bytes_count = u8::from_be_bytes([page_buffer[7]]);
         let mut child_page_pointer = 0;
-        let mut content_offset = 12;
+        let mut content_offset:u64 = 12;
         if page_type==0x0a || page_type==0x0d{
             child_page_pointer = u32::from_be_bytes([
                 page_buffer[8],
@@ -60,7 +60,7 @@ impl Page{
         let cell_content_start_address = u16::from_be_bytes([page_buffer[5],page_buffer[6]]);
         let fragmented_free_bytes_count = u8::from_be_bytes([page_buffer[7]]);
         let mut child_page_pointer = 0;
-        let mut content_offset = 12;
+        let mut content_offset:u64 = 12;
         if page_type==0x0a || page_type==0x0d{
             child_page_pointer = u32::from_be_bytes([
                 page_buffer[8],
