@@ -20,8 +20,9 @@ impl Header{
 }
 
 pub struct DB <'a>{
-   header:Header,
-   pub file:&'a mut File
+    header:Header,
+    pub file:&'a mut File,
+    tables:Vec<Table>
 }
 
 impl DB{
@@ -40,13 +41,16 @@ impl DB{
             maximum_embedded_payload_fraction: 0,
             min_embedded_payload_fraction: 0,
         };
-        DB{header,
-        file:&mut db_file}
+        let root_page = Page::new_header_page(&mut db_file,page_size);
+
+        let tables:Vec<Table> = Vec::new();
+        DB{
+            header,
+            file:&mut db_file,
+            tables
+        }
     }
 
-    pub fn read_tables() -> Vec<Table>{
-
-    }
 
     pub fn get_page_size(&self) -> u16{
         self.header.get_page_size()
