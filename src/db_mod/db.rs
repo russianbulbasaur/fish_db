@@ -43,7 +43,7 @@ impl DB{
             min_embedded_payload_fraction: 0,
         };
         let root_page = Page::new_header_page(&mut db_file,page_size);
-        root_page.read_cells();
+        root_page.page_type.read_cells();
         let tables:Vec<Table> = Vec::new();
         DB{
             header,
@@ -57,3 +57,5 @@ impl DB{
         self.header.get_page_size()
     }
 }
+
+
