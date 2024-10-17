@@ -1,35 +1,47 @@
-use crate::pager_mod::pager::Page;
+use crate::pager_mod::pager::{decode_varint};
 
-pub struct TableInteriorPage<'a>{
-    pub contents:&'a Vec<u8>,
-    pub content_offset:u8,
-    pub cell_count:u16,
+pub struct TableInteriorPage{
 }
 
-struct TableInteriorPageCell{
+pub struct TableInteriorPageCell{
 }
 
 
 impl TableInteriorPage{
-    pub fn new(contents:&Vec<u8>,content_offset:u8,cell_count:u16) -> TableInteriorPage{
-        TableInteriorPage{
-            contents,
-            content_offset,
-            cell_count
-        }
-    }
 
-    pub fn read_cells(&self) -> Vec<TableInteriorPageCell> {
-        let mut pointer = self.content_offset as usize;
+    #[allow(unused)]
+    pub fn read_cells(&self,content_offset:u8,cell_count:u16,contents:&Vec<u8>) -> Vec<TableInteriorPageCell> {
+        let mut pointer = content_offset as usize;
         let mut count = 0;
-        let mut cell_content_addresses = Vec::new();
-        while count<self.cell_count{
-            let address = u16::from_be_bytes([self.contents[pointer],
-                self.contents[pointer+1]]);
+        while count<cell_count{
+            let mut address = u16::from_be_bytes([contents[pointer],
+                contents[pointer+1]]) as usize;
+            let mut decode_result;
+            //payload size decode
+            decode_result = decode_varint(&contents[address..]);
+            let payload_size = decode_result.0;
+            address += decode_result.1;
+
+            //row id
+            decode_result = decode_varint(&contents[address..]);
+            let row_id = decode_result.0;
+            address += decode_result.1;
+
+            //payload
+            let payload = &contents[(address as usize)..(address+payload_size as usize+1)];
+            address += payload_size as usize + 1;
+            //page number of overflow page
+            let overflow_page_number = u32::from_be_bytes([
+                contents[address],
+                contents[address+1],
+                contents[address+2],
+                contents[address+3],
+            ]);
             pointer += 2;
             count += 1;
+            println!("{}",payload_size)
         }
-        let mut result = Vec::new();
+        let result = Vec::new();
         result
     }
 }

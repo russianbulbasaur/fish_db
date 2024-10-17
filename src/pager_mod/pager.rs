@@ -1,14 +1,9 @@
 use std::fs::File;
 use std::io::{Read, Seek, SeekFrom};
 use crate::db_mod::db::DB;
-use crate::pager_mod::index_interior_page::IndexInteriorPage;
-use crate::pager_mod::index_leaf_page::IndexLeafPage;
-use crate::pager_mod::table_interior_page::TableInteriorPage;
-use crate::pager_mod::table_leaf_page::TableLeafPage;
 
 #[allow(unused)]
-pub struct Page<'a> {
-    pub page_type_byte:u8,
+pub struct Page {
     pub freeblock_start_address:u16,
     pub cell_count:u16,
     pub cell_content_start_address:u16,
@@ -18,29 +13,16 @@ pub struct Page<'a> {
     pub child_page_pointer:u32,
     pub contents:Vec<u8>,
     pub content_offset:u8,
-    pub page_type: PageType<'a>
+    pub page_type: PageType
 }
 
-enum PageType<'a>{
-    TableInteriorPage(TableInteriorPage<'a>),
-    TableLeafPage(TableLeafPage<'a>),
-    IndexLeafPage(IndexLeafPage<'a>),
-    IndexInteriorPage(IndexInteriorPage<'a>)
+pub enum PageType{
+    TableInteriorPage,
+    TableLeafPage,
+    IndexLeafPage,
+    IndexInteriorPage
 }
 
-impl PageType{
-    pub fn read_cells<T>(&self) -> T{
-        match &self {
-            PageType::TableInteriorPage(page_type) => {
-            }
-            PageType::TableLeafPage(page_type) => {
-                page_type.read_cells();
-            }
-            PageType::IndexLeafPage(page_type) => {}
-            PageType::IndexInteriorPage(page_type) => {}
-        }
-    }
-}
 
 
 #[allow(unused)]
@@ -69,22 +51,13 @@ impl Page{
             content_offset = 8;
         }
         match page_type_byte {
-            0x0a => page_type = PageType::IndexLeafPage(IndexLeafPage::new(
-                &page_buffer,content_offset,cell_count
-            )),
-            0x0d => page_type = PageType::TableLeafPage(TableLeafPage::new(
-                &page_buffer,content_offset,cell_count
-            )),
-            0x05 => page_type = PageType::TableInteriorPage(TableInteriorPage::new(
-                &page_buffer,content_offset,cell_count
-            )),
-            0x02 => page_type = PageType::IndexInteriorPage(IndexInteriorPage::new(
-                &page_buffer,content_offset,cell_count
-            )),
+            0x0a => page_type = PageType::IndexLeafPage,
+            0x0d => page_type = PageType::TableLeafPage,
+            0x05 => page_type = PageType::TableInteriorPage,
+            0x02 => page_type = PageType::IndexInteriorPage,
             _ => panic!("Unrecognized page")
         }
         Page{
-            page_type_byte,
             freeblock_start_address,
             cell_count,
             cell_content_start_address,
@@ -110,18 +83,10 @@ impl Page{
         let mut content_offset = 12;
         let page_type:PageType;
         match page_type_byte {
-            0x0a => page_type = PageType::IndexLeafPage(IndexLeafPage::new(
-                &page_buffer,content_offset,cell_count
-            )),
-            0x0d => page_type = PageType::TableLeafPage(TableLeafPage::new(
-                &page_buffer,content_offset,cell_count
-            )),
-            0x05 => page_type = PageType::TableInteriorPage(TableInteriorPage::new(
-                &page_buffer,content_offset,cell_count
-            )),
-            0x02 => page_type = PageType::IndexInteriorPage(IndexInteriorPage::new(
-                &page_buffer,content_offset,cell_count
-            )),
+            0x0a => page_type = PageType::IndexLeafPage,
+            0x0d => page_type = PageType::TableLeafPage,
+            0x05 => page_type = PageType::TableInteriorPage,
+            0x02 => page_type = PageType::IndexInteriorPage,
             _ => panic!("Unrecognized page")
         }
         if page_type_byte==0x0a || page_type_byte==0x0d{
@@ -134,7 +99,6 @@ impl Page{
             content_offset = 8;
         }
         Page{
-            page_type_byte,
             freeblock_start_address,
             cell_count,
             cell_content_start_address,
@@ -147,16 +111,16 @@ impl Page{
     }
 }
 
-fn decode_varint(bytes: &[u8]) -> Option<u64> {
+pub fn decode_varint(bytes: &[u8]) -> (u64,usize) {
     let mut result: u64 = 0;
     for (i, &byte) in bytes.iter().enumerate() {
         result = (result << 7) | (byte & 0x7F) as u64;
         if byte & 0x80 == 0 {
-            return Some(result);
+            return (result,i+1);
         }
-        if i == 9 {  // Varints longer than 10 bytes would overflow a u64
-            return None;
+        if i == 9 {
+            panic!("Varint longer than 10 bytes")
         }
     }
-    None  // Input was truncated
+    panic!("Decode varint error")
 }

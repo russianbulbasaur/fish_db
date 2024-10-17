@@ -1,7 +1,8 @@
 use std::fs::File;
 use std::io::Read;
-use crate::pager_mod::pager::Page;
-use crate::table_mod::table::Table;
+use crate::pager_mod::pager::{Page, PageType};
+use crate::schema_mod::table::Table;
+use crate::pager_mod::table_leaf_page::{TableLeafPage};
 
 #[allow(unused)]
 struct Header{
@@ -43,7 +44,13 @@ impl DB{
             min_embedded_payload_fraction: 0,
         };
         let root_page = Page::new_header_page(&mut db_file,page_size);
-        root_page.page_type.read_cells();
+        #[allow(unused)]
+        let data_cells = match root_page.page_type {
+            PageType::TableLeafPage => TableLeafPage::read_cells(
+                root_page.content_offset,root_page.cell_count,&root_page.contents
+            ),
+            _ => panic!("Root page should be a leaf page")
+        };
         let tables:Vec<Table> = Vec::new();
         DB{
             header,
