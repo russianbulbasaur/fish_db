@@ -27,8 +27,13 @@ fn show_db_info(database:DB){
 }
 
 
-fn show_tables(_database:DB){
-
+fn show_tables(database:DB){
+    let mut table_names = String::from("");
+    for table in database.tables{
+       table_names.push_str(table.name.as_str());
+        table_names.push_str(" ");
+    }
+    println!("{}",table_names);
 }
 
 fn try_parsing(_database:DB){

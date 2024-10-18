@@ -1,8 +1,10 @@
+use std::collections::HashMap;
 use std::fs::File;
 use std::io::Read;
-use crate::pager_mod::pager::{Page, PageType};
+use crate::pager_mod::pager::{decode_varint, Page, PageType};
 use crate::schema_mod::table::Table;
-use crate::pager_mod::table_leaf_page::{TableLeafPage};
+use crate::pager_mod::table_leaf_page::{TableLeafPage, TableLeafPageCell};
+use crate::schema_mod::schema::Schema;
 
 #[allow(unused)]
 struct Header{
@@ -24,7 +26,7 @@ impl Header{
 pub struct DB{
     header:Header,
     pub file:File,
-    tables:Vec<Table>
+    pub tables:Vec<Table>
 }
 
 impl DB{
@@ -51,7 +53,14 @@ impl DB{
             ),
             _ => panic!("Root page should be a leaf page")
         };
-        let tables:Vec<Table> = Vec::new();
+        let mut tables:Vec<Table> = Vec::new();
+        for cell in data_cells{
+            let schema:Schema = extract_table(cell);
+            match schema {
+                Schema::Table(table) => tables.push(table),
+                _ => {}
+            }
+        }
         DB{
             header,
             file:db_file,
@@ -66,3 +75,58 @@ impl DB{
 }
 
 
+fn extract_table(data_cell:TableLeafPageCell) -> Schema{
+    let mut column_size_store : HashMap<&str,u64> = HashMap::new();
+    let mut count = 0;
+    let mut decode_result = decode_varint(&data_cell.payload[count..]);
+    let _payload_header_size = decode_result.0;
+    count += decode_result.1;
+    let keys:Vec<&str> = vec!["type","name","tbl_name","root_page","sql"];
+    for column_name in &keys{
+        decode_result = decode_varint(&data_cell.payload[count..]);
+        let data_serial = decode_result.0;
+        let data_size = find_size(data_serial);
+        count += decode_result.1;
+        column_size_store.insert(column_name,data_size);
+    }
+    let mut data_store : HashMap<&str,&[u8]>  = HashMap::new();
+    for column_name in keys{
+        let data_size = *column_size_store.get(column_name).expect("");
+        data_store.insert(column_name,&data_cell.payload[count..(count+data_size as usize)]);
+        count += data_size as usize;
+    }
+    let schema_type = String::from_utf8(data_store.get("type").unwrap().to_vec()).unwrap();
+    match schema_type.as_str() {
+        "table" =>  Schema::Table(
+            Table{
+                name:String::from_utf8(data_store.get("name").unwrap().to_vec()).unwrap(),
+                tbl_name: String::from_utf8(data_store.get("tbl_name").unwrap().to_vec()).unwrap(),
+                sql: String::from_utf8(data_store.get("sql").unwrap().to_vec()).unwrap(),
+            }
+        ),
+        _ => Schema::Index
+    }
+
+}
+
+fn find_size(serial:u64) -> u64{
+    if serial>=12 && serial%2==0 {
+        return (serial-12)/2
+    }
+    if serial>=13 && serial%2!=0 {
+        return (serial-13)/2
+    }
+    match serial {
+        0 => 0,
+        1 => 1,
+        2 => 2,
+        3 => 3,
+        4 => 4,
+        5 => 6,
+        6 => 8,
+        7 => 8,
+        8 => 0,
+        9 => 0,
+        _ => panic!("Size not found for serial {}",serial)
+    }
+}
