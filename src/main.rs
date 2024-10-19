@@ -1,5 +1,6 @@
 use anyhow::{bail, Result};
 use fish_db::db_mod::db::DB;
+use fish_db::parser_mod::parser::Parser;
 
 fn main() -> Result<()> {
     let args:Vec<String> = std::env::args().collect();
@@ -18,7 +19,7 @@ fn parse_command(database:DB,command:&str){
     match command {
         ".dbinfo" => show_db_info(database),
         ".tables" => show_tables(database),
-        _ => try_parsing(database)
+        _ => try_parsing(database,command.to_string())
     }
 }
 
@@ -36,6 +37,7 @@ fn show_tables(database:DB){
     println!("{}",table_names);
 }
 
-fn try_parsing(_database:DB){
-
+fn try_parsing(_database:DB,query:String){
+    let parser = Parser::new();
+    parser.parse(query);
 }
