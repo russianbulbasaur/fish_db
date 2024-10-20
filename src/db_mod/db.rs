@@ -5,7 +5,7 @@ use std::str::FromStr;
 use crate::pager_mod::pager::{decode_varint, Page, PageType, Pager};
 use crate::schema_mod::table::Table;
 use crate::pager_mod::table_leaf_page::{TableLeafPage, TableLeafPageCell};
-use crate::parser_mod::parser::Parser;
+use crate::parser_mod::parser::{Parser, DEFAULT_SCHEMA};
 use crate::schema_mod::schema::Schema;
 
 #[allow(unused)]
@@ -57,9 +57,10 @@ impl DB{
             ),
             _ => panic!("Root page should be a leaf page")
         };
+        let mut parser = Parser::new();
         let mut tables:Vec<Table> = Vec::new();
         for cell in data_cells{
-            let schema:Schema = extract_table(cell);
+            let schema:Schema = extract_table(&parser,cell);
             match schema {
                 Schema::Table(table) => {
                     tables.push(table);
@@ -70,7 +71,7 @@ impl DB{
         DB{
             header,
             tables,
-            parser:Parser::new(),
+            parser,
             pager
         }
     }
@@ -82,35 +83,37 @@ impl DB{
 }
 
 
-fn extract_table(data_cell:TableLeafPageCell) -> Schema{
-    let mut column_size_store : HashMap<&str,u64> = HashMap::new();
+fn extract_table(parser: &Parser,data_cell:TableLeafPageCell) -> Schema{
+    let mut column_size_store : HashMap<String,u64> = HashMap::new();
     let mut count = 0;
     let mut decode_result = decode_varint(&data_cell.payload[count..]);
     let _payload_header_size = decode_result.0;
     count += decode_result.1;
-    let keys:Vec<&str> = vec!["type","name","tbl_name","root_page","sql"];
+    let keys:Vec<String> = parser.parse_columns(String::from(DEFAULT_SCHEMA));
     for column_name in &keys{
         decode_result = decode_varint(&data_cell.payload[count..]);
         let data_serial = decode_result.0;
         let data_size = find_size(data_serial);
         count += decode_result.1;
-        column_size_store.insert(column_name,data_size);
+        column_size_store.insert(column_name.clone(),data_size);
     }
-    let mut data_store : HashMap<&str,Vec<u8>>  = HashMap::new();
+    let mut data_store : HashMap<String,Vec<u8>>  = HashMap::new();
     for column_name in keys{
-        let data_size = *column_size_store.get(column_name).expect("");
+        let data_size = *column_size_store.get(&column_name).expect("");
         data_store.insert(column_name,data_cell.payload[count..(count+data_size as usize)].to_vec());
         count += data_size as usize;
     }
     let schema_type = String::from_utf8(data_store.get("type").unwrap().to_vec()).unwrap();
-    let root = (data_store.get("root_page").unwrap().to_vec())[0];
+    let root_page = (data_store.get("rootpage").unwrap().to_vec())[0];
+    let sql = String::from_utf8(data_store.get("sql").unwrap().to_vec()).unwrap();
     match schema_type.as_str() {
         "table" =>  Schema::Table(
             Table{
                 name: String::from_utf8(data_store.get("tbl_name").unwrap().to_vec()).unwrap(),
                 tbl_name: String::from_utf8(data_store.get("tbl_name").unwrap().to_vec()).unwrap(),
-                sql: String::from_utf8(data_store.get("sql").unwrap().to_vec()).unwrap(),
-                root_page: root
+                sql:sql.clone(),
+                root_page,
+                columns:parser.parse_columns(sql),
             }
         ),
         _ => Schema::Index

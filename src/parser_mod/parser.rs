@@ -1,3 +1,4 @@
+use regex::Regex;
 use crate::parser_mod::lexer::Lexer;
 
 #[allow(unused)]
@@ -33,6 +34,22 @@ impl Parser{
             }
         }
         table_name
+    }
+
+    pub fn parse_columns(&self,sql:String) -> Vec<String>{
+        let re = Regex::new(r"(?i)\bCREATE\s+TABLE\s+[^()]+\(([^)]+)\)").unwrap();
+        let mut columns = Vec::new();
+
+        if let Some(captures) = re.captures(sql.as_str()) {
+            let columns_str = captures.get(1).unwrap().as_str();
+            let column_re = Regex::new(r"\s*([^,\s]+)\s+[^\s,]+").unwrap();
+
+            for cap in column_re.captures_iter(columns_str) {
+                columns.push(cap[1].to_string());
+            }
+        }
+
+        columns
     }
 }
 

@@ -1,5 +1,7 @@
 use anyhow::{bail, Result};
 use fish_db::db_mod::db::DB;
+use fish_db::pager_mod::table_interior_page::TableInteriorPage;
+use fish_db::pager_mod::table_interior_page::TableInteriorPageCell;
 
 fn main() -> Result<()> {
     let args:Vec<String> = std::env::args().collect();
@@ -44,7 +46,6 @@ fn try_parsing(mut database:DB, query:String){
         if table.name==table_name {
             found_table = true;
             let page = database.pager.read_page(table.root_page as u64);
-            println!("{}",page.cell_count);
         }
     }
     if !found_table{
