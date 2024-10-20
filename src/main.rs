@@ -1,6 +1,5 @@
 use anyhow::{bail, Result};
 use fish_db::db_mod::db::DB;
-use fish_db::parser_mod::parser::Parser;
 
 fn main() -> Result<()> {
     let args:Vec<String> = std::env::args().collect();
@@ -37,7 +36,18 @@ fn show_tables(database:DB){
     println!("{}",table_names);
 }
 
-fn try_parsing(_database:DB,query:String){
-    let parser = Parser::new();
-    parser.parse(query);
+fn try_parsing(mut database:DB, query:String){
+    let parser = database.parser;
+    let table_name = parser.parse(query);
+    let mut found_table = false;
+    for table in database.tables{
+        if table.name==table_name {
+            found_table = true;
+            let page = database.pager.read_page(table.root_page as u64);
+            println!("{}",page.cell_count);
+        }
+    }
+    if !found_table{
+        panic!("No table named {}",table_name);
+    }
 }

@@ -19,19 +19,22 @@ impl Parser{
         Parser{}
     }
 
-    pub fn parse(&self,source:String){
+    pub fn parse(&self,source:String) -> String{
         let mut lexer = Lexer::new(source);
         let mut token;
+        let mut table_name=String::from("") ;
         loop{
             token = lexer.next_token();
             match token {
                 Some(token) => {
-                    println!("{:?}",token.token_type);
-                    println!("{:?}",token.arguments);
+                    table_name = token.clone();
                 },
                 None => break
             }
         }
-        println!("End of parsing")
+        table_name
     }
 }
+
+
+

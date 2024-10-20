@@ -1,9 +1,11 @@
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::Read;
-use crate::pager_mod::pager::{decode_varint, Page, PageType};
+use std::str::FromStr;
+use crate::pager_mod::pager::{decode_varint, Page, PageType, Pager};
 use crate::schema_mod::table::Table;
 use crate::pager_mod::table_leaf_page::{TableLeafPage, TableLeafPageCell};
+use crate::parser_mod::parser::Parser;
 use crate::schema_mod::schema::Schema;
 
 #[allow(unused)]
@@ -25,8 +27,9 @@ impl Header{
 #[allow(unused)]
 pub struct DB{
     header:Header,
-    pub file:File,
-    pub tables:Vec<Table>
+    pub tables:Vec<Table>,
+    pub parser:Parser,
+    pub pager:Pager,
 }
 
 impl DB{
@@ -45,7 +48,8 @@ impl DB{
             maximum_embedded_payload_fraction: 0,
             min_embedded_payload_fraction: 0,
         };
-        let root_page = Page::new_header_page(&mut db_file,page_size);
+        let mut pager = Pager::new(db_file, page_size as u64);
+        let root_page = pager.read_root_page();
         #[allow(unused)]
         let data_cells = match root_page.page_type {
             PageType::TableLeafPage => TableLeafPage::read_cells(
@@ -57,14 +61,17 @@ impl DB{
         for cell in data_cells{
             let schema:Schema = extract_table(cell);
             match schema {
-                Schema::Table(table) => tables.push(table),
+                Schema::Table(table) => {
+                    tables.push(table);
+                },
                 _ => {}
             }
         }
         DB{
             header,
-            file:db_file,
-            tables
+            tables,
+            parser:Parser::new(),
+            pager
         }
     }
 
@@ -89,19 +96,21 @@ fn extract_table(data_cell:TableLeafPageCell) -> Schema{
         count += decode_result.1;
         column_size_store.insert(column_name,data_size);
     }
-    let mut data_store : HashMap<&str,&[u8]>  = HashMap::new();
+    let mut data_store : HashMap<&str,Vec<u8>>  = HashMap::new();
     for column_name in keys{
         let data_size = *column_size_store.get(column_name).expect("");
-        data_store.insert(column_name,&data_cell.payload[count..(count+data_size as usize)]);
+        data_store.insert(column_name,data_cell.payload[count..(count+data_size as usize)].to_vec());
         count += data_size as usize;
     }
     let schema_type = String::from_utf8(data_store.get("type").unwrap().to_vec()).unwrap();
+    let root = (data_store.get("root_page").unwrap().to_vec())[0];
     match schema_type.as_str() {
         "table" =>  Schema::Table(
             Table{
-                name:String::from_utf8(data_store.get("name").unwrap().to_vec()).unwrap(),
+                name: String::from_utf8(data_store.get("tbl_name").unwrap().to_vec()).unwrap(),
                 tbl_name: String::from_utf8(data_store.get("tbl_name").unwrap().to_vec()).unwrap(),
                 sql: String::from_utf8(data_store.get("sql").unwrap().to_vec()).unwrap(),
+                root_page: root
             }
         ),
         _ => Schema::Index

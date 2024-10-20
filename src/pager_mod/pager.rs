@@ -1,6 +1,7 @@
 use std::fs::File;
 use std::io::{Read, Seek, SeekFrom};
 use crate::db_mod::db::DB;
+use crate::parser_mod::parser::Parser;
 
 #[allow(unused)]
 pub struct Page {
@@ -16,6 +17,7 @@ pub struct Page {
     pub page_type: PageType
 }
 
+#[derive(Debug)]
 pub enum PageType{
     TableInteriorPage,
     TableLeafPage,
@@ -23,16 +25,25 @@ pub enum PageType{
     IndexInteriorPage
 }
 
+pub struct Pager{
+    db_file:File,
+    page_size:u64
+}
 
-
-#[allow(unused)]
-impl Page{
-    pub fn new(database: &mut DB, page:u64) -> Page {
-        let offset:u64 = (database.get_page_size() as u64 * (page - 1)) as u64;
-        let page_size = database.get_page_size();
-        let _ = database.file.seek(SeekFrom::Start(offset)).unwrap();
-        let mut page_buffer:Vec<u8> = vec![0; page_size as usize];
-        database.file.read_exact(&mut page_buffer).expect("Unable to read page");
+impl Pager{
+    pub fn new(db_file:File,page_size:u64) -> Pager{
+        Pager{
+            page_size,
+            db_file
+        }
+    }
+    
+    pub fn read_page(&mut self, page:u64) -> Page{
+        let offset:u64 = (self.page_size * (page - 1)) as u64;
+        let page_size = self.page_size as usize;
+        let _ = self.db_file.seek(SeekFrom::Start(offset)).unwrap();
+        let mut page_buffer:Vec<u8> = vec![0; page_size];
+        self.db_file.read_exact(&mut page_buffer).expect("Unable to read page");
         let page_type_byte = u8::from_be_bytes([page_buffer[0]]);
         let freeblock_start_address = u16::from_be_bytes([page_buffer[1],page_buffer[2]]);
         let cell_count = u16::from_be_bytes([page_buffer[3],page_buffer[4]]);
@@ -68,12 +79,12 @@ impl Page{
             page_type
         }
     }
-
-    pub fn new_header_page(db_file:&mut File,page_size:u16) -> Page {
+    
+    pub fn read_root_page(&mut self) -> Page{
         const HEADER_SIZE:usize = 100;
-        let _ = db_file.seek(SeekFrom::Start(HEADER_SIZE as u64)).unwrap();
-        let mut page_buffer:Vec<u8> = vec![0;(page_size as usize) - HEADER_SIZE];
-        db_file.read_exact(&mut page_buffer).expect("Unable to read page");
+        let _ = self.db_file.seek(SeekFrom::Start(HEADER_SIZE as u64)).unwrap();
+        let mut page_buffer:Vec<u8> = vec![0;self.page_size as usize - HEADER_SIZE];
+        self.db_file.read_exact(&mut page_buffer).expect("Unable to read page");
         let page_type_byte = u8::from_be_bytes([page_buffer[0]]);
         let freeblock_start_address = u16::from_be_bytes([page_buffer[1],page_buffer[2]]);
         let cell_count = u16::from_be_bytes([page_buffer[3],page_buffer[4]]);
@@ -110,6 +121,8 @@ impl Page{
         }
     }
 }
+
+
 
 pub fn decode_varint(bytes: &[u8]) -> (u64,usize) {
     let mut result: u64 = 0;
