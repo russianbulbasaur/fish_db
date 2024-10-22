@@ -11,3 +11,20 @@ impl Table{
 
     }
 }
+
+
+impl Clone for Table{
+    fn clone(&self) -> Self {
+        Table{
+            name: self.name.to_owned(),
+            tbl_name: self.tbl_name.to_owned(),
+            sql: self.sql.to_owned(),
+            root_page: self.root_page,
+            columns: self.columns.to_owned(),
+        }
+    }
+
+    fn clone_from(&mut self, source: &Self) {
+        //not implied
+    }
+}

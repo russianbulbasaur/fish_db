@@ -6,6 +6,7 @@ use crate::parser_mod::parser::Parser;
 
 #[allow(unused)]
 pub struct Page {
+    pub page_number:u64,
     pub freeblock_start_address:u16,
     pub cell_count:u16,
     pub cell_content_start_address:u16,
@@ -70,6 +71,7 @@ impl Pager{
             _ => panic!("Unrecognized page")
         }
         Page{
+            page_number:page,
             freeblock_start_address,
             cell_count,
             cell_content_start_address,
@@ -111,6 +113,7 @@ impl Pager{
             content_offset = 8;
         }
         Page{
+            page_number:1,
             freeblock_start_address,
             cell_count,
             cell_content_start_address,

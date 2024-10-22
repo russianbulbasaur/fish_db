@@ -14,7 +14,7 @@ pub struct TableLeafPageCell<'a>{
 impl TableLeafPage{
 
     #[allow(unused)]
-    pub fn read_cells(content_offset:u8,cell_count:u16,contents:&Vec<u8>) -> Vec<TableLeafPageCell> {
+    pub fn read_cells(content_offset:u8,cell_count:u16,contents:&Vec<u8>,is_root:bool) -> Vec<TableLeafPageCell> {
         let mut pointer = content_offset as usize;
         let mut count = 0;
         let mut result = Vec::new();
@@ -23,7 +23,9 @@ impl TableLeafPage{
                 contents[pointer+1]]) as usize;
             pointer+=2;
             count+=1;
-            address -= 100;
+            if is_root {
+                address -= 100;
+            }
             let mut decode_result;
             //payload size decode
             decode_result = decode_varint(&contents[address..]);

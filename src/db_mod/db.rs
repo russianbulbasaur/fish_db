@@ -3,6 +3,7 @@ use std::fs::File;
 use std::io::Read;
 use std::str::FromStr;
 use crate::pager_mod::pager::{decode_varint, Page, PageType, Pager};
+use crate::pager_mod::table_interior_page::TableInteriorPage;
 use crate::schema_mod::table::Table;
 use crate::pager_mod::table_leaf_page::{TableLeafPage, TableLeafPageCell};
 use crate::parser_mod::parser::{Parser, DEFAULT_SCHEMA};
@@ -53,7 +54,8 @@ impl DB{
         #[allow(unused)]
         let data_cells = match root_page.page_type {
             PageType::TableLeafPage => TableLeafPage::read_cells(
-                root_page.content_offset,root_page.cell_count,&root_page.contents
+                root_page.content_offset,root_page.cell_count,&root_page.contents,
+                true
             ),
             _ => panic!("Root page should be a leaf page")
         };
@@ -80,6 +82,70 @@ impl DB{
     pub fn get_page_size(&self) -> u16{
         self.header.get_page_size()
     }
+
+
+    pub fn read_full_table(&mut self,table:Table){
+        println!("{:?}",table.columns);
+        let rootpage = self.pager.read_page(table.root_page as u64);
+        let mut result : Vec<HashMap<String,Vec<u8>>> = Vec::new();
+        self.read_pages_recursively(rootpage,&mut result,&table);
+        for map in result{
+            let mut printable = String::from("");
+            for col in &table.columns{
+               printable.push_str(String::from_utf8(map.get(col).unwrap().to_vec()).unwrap().as_str());
+                printable.push('|');
+            }
+            println!("{}",printable);
+        }
+    }
+
+    fn read_pages_recursively(&mut self,curr_page:Page,
+                              result:&mut Vec<HashMap<String,Vec<u8>>>,table:&Table){
+        match curr_page.page_type {
+            PageType::TableInteriorPage => {
+                let data_cells = TableInteriorPage::read_cells(curr_page.content_offset,curr_page.cell_count,
+                &curr_page.contents);
+                for data_cell in data_cells{
+                    let child_page = self.pager.read_page(data_cell.left_child_page_number as u64);
+                    self.read_pages_recursively(child_page,result,table);
+                }
+            }
+            PageType::TableLeafPage => {
+                let data_cells = TableLeafPage::read_cells(curr_page.content_offset,
+                                                          curr_page.cell_count, &curr_page.contents,false);
+                for data_cell in data_cells{
+                   let extracted_result = extract_data(&self.parser,
+                                                      data_cell,&table);
+                    result.push(extracted_result);
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+
+fn extract_data(parser: &Parser,data_cell:TableLeafPageCell,table:&Table) -> HashMap<String,Vec<u8>>{
+    let mut column_size_store : HashMap<String,u64> = HashMap::new();
+    let mut count = 0;
+    let mut decode_result = decode_varint(&data_cell.payload[count..]);
+    let _payload_header_size = decode_result.0;
+    count += decode_result.1;
+    let keys:Vec<String> = parser.parse_columns(table.sql.clone());
+    for column_name in &keys{
+        decode_result = decode_varint(&data_cell.payload[count..]);
+        let data_serial = decode_result.0;
+        let data_size = find_size(data_serial);
+        count += decode_result.1;
+        column_size_store.insert(column_name.clone(),data_size);
+    }
+    let mut data_store : HashMap<String,Vec<u8>>  = HashMap::new();
+    for column_name in keys{
+        let data_size = *column_size_store.get(&column_name).expect("");
+        data_store.insert(column_name,data_cell.payload[count..(count+data_size as usize)].to_vec());
+        count += data_size as usize;
+    }
+    data_store
 }
 
 

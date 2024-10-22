@@ -1,7 +1,5 @@
 use anyhow::{bail, Result};
 use fish_db::db_mod::db::DB;
-use fish_db::pager_mod::table_interior_page::TableInteriorPage;
-use fish_db::pager_mod::table_interior_page::TableInteriorPageCell;
 
 fn main() -> Result<()> {
     let args:Vec<String> = std::env::args().collect();
@@ -10,13 +8,13 @@ fn main() -> Result<()> {
         2 => bail!("Need a command"),
         _ => {}
     }
-    let database = DB::new(&args[1]);
+    let mut database = DB::new(&args[1]);
     let command = &args[2];
-    parse_command(database,command);
+    parse_command(&mut database,command);
     Ok(())
 }
 
-fn parse_command(database:DB,command:&str){
+fn parse_command(database:& mut DB,command:&str){
     match command {
         ".dbinfo" => show_db_info(database),
         ".tables" => show_tables(database),
@@ -24,28 +22,30 @@ fn parse_command(database:DB,command:&str){
     }
 }
 
-fn show_db_info(database:DB){
+fn show_db_info(database:&DB){
     println!("database page size: {}",database.get_page_size());
 }
 
 
-fn show_tables(database:DB){
+fn show_tables(database:&DB){
     let mut table_names = String::from("");
-    for table in database.tables{
+    for table in &database.tables{
        table_names.push_str(table.name.as_str());
         table_names.push_str(" ");
     }
     println!("{}",table_names);
 }
 
-fn try_parsing(mut database:DB, query:String){
-    let parser = database.parser;
+fn try_parsing(database: &mut DB, query:String){
+    let parser = &database.parser;
     let table_name = parser.parse(query);
     let mut found_table = false;
-    for table in database.tables{
+    let tables = database.tables.to_owned();
+    for table in tables{
+        let cloneTable = table.clone();
         if table.name==table_name {
             found_table = true;
-            let page = database.pager.read_page(table.root_page as u64);
+            database.read_full_table(cloneTable);
         }
     }
     if !found_table{

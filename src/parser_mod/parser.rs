@@ -37,12 +37,13 @@ impl Parser{
     }
 
     pub fn parse_columns(&self,sql:String) -> Vec<String>{
-        let re = Regex::new(r"(?i)\bCREATE\s+TABLE\s+[^()]+\(([^)]+)\)").unwrap();
+        let re = Regex::new(r"(?i)\bCREATE\s+TABLE\s+\w+\s*\(([^)]+)\)").unwrap();
         let mut columns = Vec::new();
 
         if let Some(captures) = re.captures(sql.as_str()) {
             let columns_str = captures.get(1).unwrap().as_str();
-            let column_re = Regex::new(r"\s*([^,\s]+)\s+[^\s,]+").unwrap();
+
+            let column_re = Regex::new(r"(?m)^\s*([a-zA-Z_][a-zA-Z0-9_]*)\s+[a-zA-Z]+").unwrap();
 
             for cap in column_re.captures_iter(columns_str) {
                 columns.push(cap[1].to_string());
