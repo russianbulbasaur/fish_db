@@ -3,6 +3,8 @@ use crate::pager_mod::pager::{decode_varint};
 pub struct TableInteriorPage{
 }
 
+
+#[allow(unused)]
 pub struct TableInteriorPageCell{
     pub left_child_page_number:u32,
     row_id:u64

@@ -37,18 +37,5 @@ fn show_tables(database:&DB){
 }
 
 fn try_parsing(database: &mut DB, query:String){
-    let parser = &database.parser;
-    let table_name = parser.parse(query);
-    let mut found_table = false;
-    let tables = database.tables.to_owned();
-    for table in tables{
-        let cloneTable = table.clone();
-        if table.name==table_name {
-            found_table = true;
-            database.read_full_table(cloneTable);
-        }
-    }
-    if !found_table{
-        panic!("No table named {}",table_name);
-    }
+    database.execute(query);
 }

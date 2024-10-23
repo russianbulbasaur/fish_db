@@ -1,12 +1,12 @@
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::Read;
-use std::str::FromStr;
 use crate::pager_mod::pager::{decode_varint, Page, PageType, Pager};
 use crate::pager_mod::table_interior_page::TableInteriorPage;
 use crate::schema_mod::table::Table;
 use crate::pager_mod::table_leaf_page::{TableLeafPage, TableLeafPageCell};
-use crate::parser_mod::parser::{Parser, DEFAULT_SCHEMA};
+use crate::parser_mod::parser::{Parser, Query, DEFAULT_SCHEMA};
+use crate::schema_mod::index::Index;
 use crate::schema_mod::schema::Schema;
 
 #[allow(unused)]
@@ -59,7 +59,7 @@ impl DB{
             ),
             _ => panic!("Root page should be a leaf page")
         };
-        let mut parser = Parser::new();
+        let parser = Parser::new();
         let mut tables:Vec<Table> = Vec::new();
         for cell in data_cells{
             let schema:Schema = extract_table(&parser,cell);
@@ -67,7 +67,12 @@ impl DB{
                 Schema::Table(table) => {
                     tables.push(table);
                 },
-                _ => {}
+                Schema::Index(index) => {
+                    println!("{}",index.name)
+                },
+                _ => {
+                    println!("{:?}",schema);
+                }
             }
         }
         DB{
@@ -83,39 +88,56 @@ impl DB{
         self.header.get_page_size()
     }
 
+    pub fn execute(&mut self,query:String) {
+        let mut parsed_result = self.parser.parse(query);
+        for table in &self.tables{
+            if table.name==parsed_result.table_name {
+                if parsed_result.columns_requested.len()==1 && parsed_result.columns_requested[0]=="*"{
+                    parsed_result.columns_requested = table.columns.to_vec();
+                }
+                self.read_full_table(table.clone(),&parsed_result);
+                return;
+            }
+        }
+        println!("no table named {}",parsed_result.table_name);
+    }
 
-    pub fn read_full_table(&mut self,table:Table){
-        println!("{:?}",table.columns);
+
+    pub fn read_full_table(&mut self,table:Table,query:&Query){
         let rootpage = self.pager.read_page(table.root_page as u64);
         let mut result : Vec<HashMap<String,Vec<u8>>> = Vec::new();
-        self.read_pages_recursively(rootpage,&mut result,&table);
+        self.read_pages_recursively(rootpage,&mut result,&table,query);
         for map in result{
-            let mut printable = String::from("");
-            for col in &table.columns{
-               printable.push_str(String::from_utf8(map.get(col).unwrap().to_vec()).unwrap().as_str());
-                printable.push('|');
+            let mut printable = Vec::new();
+            for col in &query.columns_requested{
+               printable.push(String::from_utf8(map.get(col).unwrap().to_vec()).unwrap());
             }
-            println!("{}",printable);
+            println!("{}",printable.join("|"));
         }
     }
 
     fn read_pages_recursively(&mut self,curr_page:Page,
-                              result:&mut Vec<HashMap<String,Vec<u8>>>,table:&Table){
+                              result:&mut Vec<HashMap<String,Vec<u8>>>,table:&Table,query:&Query){
         match curr_page.page_type {
             PageType::TableInteriorPage => {
                 let data_cells = TableInteriorPage::read_cells(curr_page.content_offset,curr_page.cell_count,
                 &curr_page.contents);
                 for data_cell in data_cells{
                     let child_page = self.pager.read_page(data_cell.left_child_page_number as u64);
-                    self.read_pages_recursively(child_page,result,table);
+                    self.read_pages_recursively(child_page,result,table,query);
                 }
             }
             PageType::TableLeafPage => {
+                println!("reading page {}",curr_page.page_number);
                 let data_cells = TableLeafPage::read_cells(curr_page.content_offset,
                                                           curr_page.cell_count, &curr_page.contents,false);
                 for data_cell in data_cells{
                    let extracted_result = extract_data(&self.parser,
                                                       data_cell,&table);
+                    let mut filtered = HashMap::new();
+                    for col in &query.columns_requested{
+                        filtered.insert(col.clone(),extracted_result.get(col).expect("column not found"));
+                    }
                     result.push(extracted_result);
                 }
             }
@@ -131,7 +153,7 @@ fn extract_data(parser: &Parser,data_cell:TableLeafPageCell,table:&Table) -> Has
     let mut decode_result = decode_varint(&data_cell.payload[count..]);
     let _payload_header_size = decode_result.0;
     count += decode_result.1;
-    let keys:Vec<String> = parser.parse_columns(table.sql.clone());
+    let keys:Vec<String> = parser.parse(table.sql.clone()).columns_requested;
     for column_name in &keys{
         decode_result = decode_varint(&data_cell.payload[count..]);
         let data_serial = decode_result.0;
@@ -155,7 +177,7 @@ fn extract_table(parser: &Parser,data_cell:TableLeafPageCell) -> Schema{
     let mut decode_result = decode_varint(&data_cell.payload[count..]);
     let _payload_header_size = decode_result.0;
     count += decode_result.1;
-    let keys:Vec<String> = parser.parse_columns(String::from(DEFAULT_SCHEMA));
+    let keys:Vec<String> = parser.parse(String::from(DEFAULT_SCHEMA)).columns_requested;
     for column_name in &keys{
         decode_result = decode_varint(&data_cell.payload[count..]);
         let data_serial = decode_result.0;
@@ -179,10 +201,17 @@ fn extract_table(parser: &Parser,data_cell:TableLeafPageCell) -> Schema{
                 tbl_name: String::from_utf8(data_store.get("tbl_name").unwrap().to_vec()).unwrap(),
                 sql:sql.clone(),
                 root_page,
-                columns:parser.parse_columns(sql),
+                columns:parser.parse(sql).columns_requested,
             }
         ),
-        _ => Schema::Index
+        "index" => Schema::Index(Index{
+            name: String::from_utf8(data_store.get("tbl_name").unwrap().to_vec()).unwrap(),
+            tbl_name: "".to_string(),
+            sql,
+            root_page,
+            columns: vec![],
+        }),
+        _ => Schema::View
     }
 
 }

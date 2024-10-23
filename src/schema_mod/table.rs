@@ -1,3 +1,4 @@
+#[derive(Debug)]
 pub struct Table{
     pub name:String,
     pub tbl_name:String,
@@ -24,7 +25,7 @@ impl Clone for Table{
         }
     }
 
-    fn clone_from(&mut self, source: &Self) {
+    fn clone_from(&mut self, _source: &Self) {
         //not implied
     }
 }
