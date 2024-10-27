@@ -7,12 +7,6 @@ pub struct Index{
     pub columns:Vec<String>
 }
 
-impl Index{
-    pub fn read_Index(){
-
-    }
-}
-
 
 impl Clone for Index{
     fn clone(&self) -> Self {

@@ -7,12 +7,6 @@ pub struct Table{
     pub columns:Vec<String>
 }
 
-impl Table{
-    pub fn read_table(){
-
-    }
-}
-
 
 impl Clone for Table{
     fn clone(&self) -> Self {

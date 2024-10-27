@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::Read;
+use crate::pager_mod::index_interior_page::{IndexInteriorPage, IndexInteriorPageCell};
 use crate::pager_mod::pager::{decode_varint, Page, PageType, Pager};
 use crate::pager_mod::table_interior_page::TableInteriorPage;
 use crate::schema_mod::table::Table;
@@ -31,6 +32,7 @@ pub struct DB{
     pub tables:Vec<Table>,
     pub parser:Parser,
     pub pager:Pager,
+    pub indexes:Vec<Index>
 }
 
 impl DB{
@@ -61,6 +63,7 @@ impl DB{
         };
         let parser = Parser::new();
         let mut tables:Vec<Table> = Vec::new();
+        let mut indexes:Vec<Index> = Vec::new();
         for cell in data_cells{
             let schema:Schema = extract_table(&parser,cell);
             match schema {
@@ -68,7 +71,7 @@ impl DB{
                     tables.push(table);
                 },
                 Schema::Index(index) => {
-                    println!("{}",index.name)
+                    indexes.push(index);
                 },
                 _ => {
                     println!("{:?}",schema);
@@ -79,7 +82,8 @@ impl DB{
             header,
             tables,
             parser,
-            pager
+            pager,
+            indexes
         }
     }
 
@@ -88,8 +92,31 @@ impl DB{
         self.header.get_page_size()
     }
 
+    fn search_apt_index(&self,column:String) -> Option<Index>{
+        for index in &self.indexes{
+            for index_col in &index.columns{
+                if index_col.as_str()==column {
+                    return Some(index.clone());
+                }
+            }
+        }
+        None
+    }
+
     pub fn execute(&mut self,query:String) {
         let mut parsed_result = self.parser.parse(query);
+        println!("{:?}",parsed_result.where_clauses);
+        for where_clause in &parsed_result.where_clauses{
+            match self.search_apt_index(where_clause.0.clone()) {
+                Some(index) => {
+                    self.read_index(index,where_clause.1.clone());
+                    return;
+                },
+                None => {
+                    println!("{}","No index found");
+                }
+            }
+        }
         for table in &self.tables{
             if table.name==parsed_result.table_name {
                 if parsed_result.columns_requested.len()==1 && parsed_result.columns_requested[0]=="*"{
@@ -102,11 +129,49 @@ impl DB{
         println!("no table named {}",parsed_result.table_name);
     }
 
+    fn read_index(&mut self, index:Index, query_col:String){
+        let rootpage = self.pager.read_page(index.root_page as u64);
+        println!("query param {}",query_col);
+        self.read_index_pages_recursively(rootpage,query_col);
+    }
 
-    pub fn read_full_table(&mut self,table:Table,query:&Query){
+    fn read_index_pages_recursively(&mut self,curr_page:Page,query_col:String){
+        match curr_page.page_type {
+            PageType::IndexInteriorPage => {
+                let data_cells = IndexInteriorPage::read_cells(
+                    curr_page.content_offset,curr_page.cell_count,&curr_page.contents
+                );
+                println!("len {}",data_cells.len());
+                for data_cell in data_cells{
+                    let entry = extract_index_cell(&data_cell);
+                    let extracted_key = entry.0.as_bytes();
+                    let query_col_bytes = query_col.as_bytes();
+                    println!("extracted key {}",entry.0);
+                    if(extracted_key==query_col_bytes){
+                        println!("{} matched at  {}",entry.0,entry.1);
+                    }else if (extracted_key<query_col_bytes) {
+                        println!("{}","still scanning");
+                        continue;
+                    }else if(extracted_key>query_col_bytes){
+                        println!("{}","going left");
+                        let page = self.pager.read_page(data_cell.left_child_page_number as u64);
+                        self.read_index_pages_recursively(page,query_col);
+                        return;
+                    }
+                }
+            },
+            PageType::IndexLeafPage => {
+
+            }
+            _ => {}
+        }
+    }
+
+
+    fn read_full_table(&mut self,table:Table,query:&Query){
         let rootpage = self.pager.read_page(table.root_page as u64);
         let mut result : Vec<HashMap<String,Vec<u8>>> = Vec::new();
-        self.read_pages_recursively(rootpage,&mut result,&table,query);
+        self.read_table_pages_recursively(rootpage,&mut result,&table,query);
         for map in result{
             let mut printable = Vec::new();
             for col in &query.columns_requested{
@@ -116,7 +181,7 @@ impl DB{
         }
     }
 
-    fn read_pages_recursively(&mut self,curr_page:Page,
+    fn read_table_pages_recursively(&mut self,curr_page:Page,
                               result:&mut Vec<HashMap<String,Vec<u8>>>,table:&Table,query:&Query){
         match curr_page.page_type {
             PageType::TableInteriorPage => {
@@ -124,7 +189,7 @@ impl DB{
                 &curr_page.contents);
                 for data_cell in data_cells{
                     let child_page = self.pager.read_page(data_cell.left_child_page_number as u64);
-                    self.read_pages_recursively(child_page,result,table,query);
+                    self.read_table_pages_recursively(child_page,result,table,query);
                 }
             }
             PageType::TableLeafPage => {
@@ -147,6 +212,92 @@ impl DB{
 }
 
 
+type IndexEntry = (String,u64);
+
+fn extract_index_cell<'a>(data_cell:&IndexInteriorPageCell) -> IndexEntry{
+    println!("{}",data_cell.payload_size);
+    println!("left child {}",data_cell.left_child_page_number);
+
+    let mut count = 0;
+    let mut decode_result = decode_varint(&data_cell.payload[count..]);
+    let mut payload_header_size = decode_result.0;
+    count += decode_result.1;
+    payload_header_size -= decode_result.1 as u64;
+    let mut data_size_vec = Vec::new();
+    while payload_header_size>0{
+        decode_result = decode_varint(&data_cell.payload[count..]);
+        let data_serial = decode_result.0;
+        let data_size = find_size(data_serial);
+        data_size_vec.push(data_size);
+        println!("data size {}",data_size);
+        count += decode_result.1;
+        payload_header_size -= decode_result.1 as u64;
+    }
+
+    let key = String::from_utf8_lossy(&data_cell.payload[count..(count+data_size_vec[0] as usize)]).to_string();
+    count += data_size_vec[0] as usize;
+    let row_id = match data_size_vec[1] {
+        1 => { u64::from_be_bytes([
+                0,0,0,0,0,0,0,
+                data_cell.payload[count]])
+        }
+        2 => {
+            u64::from_be_bytes([
+                0,0,0,0,0,0,
+                data_cell.payload[count],
+                data_cell.payload[count+1]
+            ])
+        }
+        3 => {
+            u64::from_be_bytes([
+                0,0,0,0,0,
+                data_cell.payload[count],
+                data_cell.payload[count+1],
+                data_cell.payload[count+2]
+            ])
+        }
+        4 => {
+            u64::from_be_bytes([
+                0,0,0,0,
+                data_cell.payload[count],
+                data_cell.payload[count+1],
+                data_cell.payload[count+2],
+                data_cell.payload[count+3]
+            ])
+        }
+        6 => {
+            u64::from_be_bytes([
+                0,
+                0,
+                0,
+                0,
+                data_cell.payload[count],
+                data_cell.payload[count+1],
+                data_cell.payload[count+2],
+                data_cell.payload[count+3]
+            ])
+        }
+        8 => {
+            u64::from_be_bytes([
+                data_cell.payload[count],
+                data_cell.payload[count+1],
+                data_cell.payload[count+2],
+                data_cell.payload[count+3],
+                data_cell.payload[count+4],
+                data_cell.payload[count+5],
+                data_cell.payload[count+6],
+                data_cell.payload[count+7]
+            ])
+        }
+        _ => {
+            panic!("Unknown size {}",data_size_vec[1])
+        }
+    };
+    let entry : IndexEntry = (key,row_id);
+    return entry;
+}
+
+
 fn extract_data(parser: &Parser,data_cell:TableLeafPageCell,table:&Table) -> HashMap<String,Vec<u8>>{
     let mut column_size_store : HashMap<String,u64> = HashMap::new();
     let mut count = 0;
@@ -166,6 +317,11 @@ fn extract_data(parser: &Parser,data_cell:TableLeafPageCell,table:&Table) -> Has
         let data_size = *column_size_store.get(&column_name).expect("");
         data_store.insert(column_name,data_cell.payload[count..(count+data_size as usize)].to_vec());
         count += data_size as usize;
+    }
+    println!("{}",data_cell.row_id);
+    if(data_cell.row_id==1332971){
+        println!("{:?}",String::from_utf8(data_store.get("country").expect("not found").to_vec()));
+        panic!("im supposed to panic");
     }
     data_store
 }
@@ -197,7 +353,7 @@ fn extract_table(parser: &Parser,data_cell:TableLeafPageCell) -> Schema{
     match schema_type.as_str() {
         "table" =>  Schema::Table(
             Table{
-                name: String::from_utf8(data_store.get("tbl_name").unwrap().to_vec()).unwrap(),
+                name: String::from_utf8(data_store.get("name").unwrap().to_vec()).unwrap(),
                 tbl_name: String::from_utf8(data_store.get("tbl_name").unwrap().to_vec()).unwrap(),
                 sql:sql.clone(),
                 root_page,
@@ -205,11 +361,11 @@ fn extract_table(parser: &Parser,data_cell:TableLeafPageCell) -> Schema{
             }
         ),
         "index" => Schema::Index(Index{
-            name: String::from_utf8(data_store.get("tbl_name").unwrap().to_vec()).unwrap(),
-            tbl_name: "".to_string(),
-            sql,
+            name: String::from_utf8(data_store.get("name").unwrap().to_vec()).unwrap(),
+            tbl_name: String::from_utf8(data_store.get("tbl_name").unwrap().to_vec()).unwrap(),
+            sql : sql.clone(),
             root_page,
-            columns: vec![],
+            columns: parser.extract_columns_from_index(sql),
         }),
         _ => Schema::View
     }
