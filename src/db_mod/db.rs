@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::fs::File;
 use std::io::Read;
 use crate::pager_mod::index_interior_page::{IndexInteriorPage, IndexInteriorPageCell};
+use crate::pager_mod::index_leaf_page::{IndexLeafPage, IndexLeafPageCell};
 use crate::pager_mod::pager::{decode_varint, Page, PageType, Pager};
 use crate::pager_mod::table_interior_page::TableInteriorPage;
 use crate::schema_mod::table::Table;
@@ -141,13 +142,14 @@ impl DB{
                 let data_cells = IndexInteriorPage::read_cells(
                     curr_page.content_offset,curr_page.cell_count,&curr_page.contents
                 );
-                println!("len {}",data_cells.len());
                 for data_cell in data_cells{
-                    let entry = extract_index_cell(&data_cell);
+                    let entry = extract_interior_index_cell(&data_cell);
                     let extracted_key = entry.0.as_bytes();
                     let query_col_bytes = query_col.as_bytes();
                     println!("extracted key {}",entry.0);
                     if(extracted_key==query_col_bytes){
+                        let page = self.pager.read_page(data_cell.left_child_page_number as u64);
+                        self.read_index_pages_recursively(page,query_col.clone());
                         println!("{} matched at  {}",entry.0,entry.1);
                     }else if (extracted_key<query_col_bytes) {
                         println!("{}","still scanning");
@@ -161,7 +163,18 @@ impl DB{
                 }
             },
             PageType::IndexLeafPage => {
-
+                let data_cells = IndexLeafPage::read_cells(
+                    curr_page.content_offset,curr_page.cell_count,&curr_page.contents
+                );
+                for data_cell in data_cells{
+                    let entry = extract_leaf_index_cell(&data_cell);
+                    let extracted_key = entry.0.as_bytes();
+                    let query_col_bytes = query_col.as_bytes();
+                    println!("extracted key {}",entry.0);
+                    if(extracted_key==query_col_bytes){
+                        println!("{} matched at  {}",entry.0,entry.1);
+                    }
+                }
             }
             _ => {}
         }
@@ -214,10 +227,7 @@ impl DB{
 
 type IndexEntry = (String,u64);
 
-fn extract_index_cell<'a>(data_cell:&IndexInteriorPageCell) -> IndexEntry{
-    println!("{}",data_cell.payload_size);
-    println!("left child {}",data_cell.left_child_page_number);
-
+fn extract_interior_index_cell<'a>(data_cell:&IndexInteriorPageCell) -> IndexEntry{
     let mut count = 0;
     let mut decode_result = decode_varint(&data_cell.payload[count..]);
     let mut payload_header_size = decode_result.0;
@@ -229,7 +239,6 @@ fn extract_index_cell<'a>(data_cell:&IndexInteriorPageCell) -> IndexEntry{
         let data_serial = decode_result.0;
         let data_size = find_size(data_serial);
         data_size_vec.push(data_size);
-        println!("data size {}",data_size);
         count += decode_result.1;
         payload_header_size -= decode_result.1 as u64;
     }
@@ -297,6 +306,84 @@ fn extract_index_cell<'a>(data_cell:&IndexInteriorPageCell) -> IndexEntry{
     return entry;
 }
 
+fn extract_leaf_index_cell<'a>(data_cell:&IndexLeafPageCell) -> IndexEntry{
+    let mut count = 0;
+    let mut decode_result = decode_varint(&data_cell.payload[count..]);
+    let mut payload_header_size = decode_result.0;
+    count += decode_result.1;
+    payload_header_size -= decode_result.1 as u64;
+    let mut data_size_vec = Vec::new();
+    while payload_header_size>0{
+        decode_result = decode_varint(&data_cell.payload[count..]);
+        let data_serial = decode_result.0;
+        let data_size = find_size(data_serial);
+        data_size_vec.push(data_size);
+        count += decode_result.1;
+        payload_header_size -= decode_result.1 as u64;
+    }
+
+    let key = String::from_utf8_lossy(&data_cell.payload[count..(count+data_size_vec[0] as usize)]).to_string();
+    count += data_size_vec[0] as usize;
+    let row_id = match data_size_vec[1] {
+        1 => { u64::from_be_bytes([
+            0,0,0,0,0,0,0,
+            data_cell.payload[count]])
+        }
+        2 => {
+            u64::from_be_bytes([
+                0,0,0,0,0,0,
+                data_cell.payload[count],
+                data_cell.payload[count+1]
+            ])
+        }
+        3 => {
+            u64::from_be_bytes([
+                0,0,0,0,0,
+                data_cell.payload[count],
+                data_cell.payload[count+1],
+                data_cell.payload[count+2]
+            ])
+        }
+        4 => {
+            u64::from_be_bytes([
+                0,0,0,0,
+                data_cell.payload[count],
+                data_cell.payload[count+1],
+                data_cell.payload[count+2],
+                data_cell.payload[count+3]
+            ])
+        }
+        6 => {
+            u64::from_be_bytes([
+                0,
+                0,
+                0,
+                0,
+                data_cell.payload[count],
+                data_cell.payload[count+1],
+                data_cell.payload[count+2],
+                data_cell.payload[count+3]
+            ])
+        }
+        8 => {
+            u64::from_be_bytes([
+                data_cell.payload[count],
+                data_cell.payload[count+1],
+                data_cell.payload[count+2],
+                data_cell.payload[count+3],
+                data_cell.payload[count+4],
+                data_cell.payload[count+5],
+                data_cell.payload[count+6],
+                data_cell.payload[count+7]
+            ])
+        }
+        _ => {
+            panic!("Unknown size {}",data_size_vec[1])
+        }
+    };
+    let entry : IndexEntry = (key,row_id);
+    return entry;
+}
 
 fn extract_data(parser: &Parser,data_cell:TableLeafPageCell,table:&Table) -> HashMap<String,Vec<u8>>{
     let mut column_size_store : HashMap<String,u64> = HashMap::new();
@@ -317,11 +404,6 @@ fn extract_data(parser: &Parser,data_cell:TableLeafPageCell,table:&Table) -> Has
         let data_size = *column_size_store.get(&column_name).expect("");
         data_store.insert(column_name,data_cell.payload[count..(count+data_size as usize)].to_vec());
         count += data_size as usize;
-    }
-    println!("{}",data_cell.row_id);
-    if(data_cell.row_id==1332971){
-        println!("{:?}",String::from_utf8(data_store.get("country").expect("not found").to_vec()));
-        panic!("im supposed to panic");
     }
     data_store
 }

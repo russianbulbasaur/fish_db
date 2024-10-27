@@ -16,8 +16,8 @@ impl IndexLeafPage{
     #[allow(unused)]
     pub fn read_cells(content_offset:u8,cell_count:u16,contents:&Vec<u8>) -> Vec<IndexLeafPageCell> {
         let mut pointer = content_offset as usize;
-        let mut count = 0;
         let mut result = Vec::new();
+        let mut count = 0;
         while count<cell_count{
             let mut address = u16::from_be_bytes([contents[pointer],
                 contents[pointer+1]]) as usize;
@@ -31,11 +31,12 @@ impl IndexLeafPage{
             let payload = &contents[(address as usize)..(address+payload_size as usize)];
             address += payload_size as usize;
 
+
             pointer += 2;
             count += 1;
             result.push(IndexLeafPageCell{
                 payload_size,
-                payload,
+                payload
             });
         }
         result

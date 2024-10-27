@@ -39,6 +39,7 @@ impl IndexInteriorPage{
             let payload = &contents[(address as usize)..(address+payload_size as usize)];
             address += payload_size as usize;
 
+
             pointer += 2;
             count += 1;
             result.push(IndexInteriorPageCell{
