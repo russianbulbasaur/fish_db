@@ -40,12 +40,13 @@ impl IndexInteriorPage{
             address += payload_size as usize;
 
 
+
             pointer += 2;
             count += 1;
             result.push(IndexInteriorPageCell{
                 left_child_page_number,
                 payload_size,
-                payload
+                payload,
             });
         }
         result

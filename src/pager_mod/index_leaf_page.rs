@@ -18,6 +18,7 @@ impl IndexLeafPage{
         let mut pointer = content_offset as usize;
         let mut result = Vec::new();
         let mut count = 0;
+        println!("cell count {}",cell_count);
         while count<cell_count{
             let mut address = u16::from_be_bytes([contents[pointer],
                 contents[pointer+1]]) as usize;
@@ -30,13 +31,12 @@ impl IndexLeafPage{
             //payload
             let payload = &contents[(address as usize)..(address+payload_size as usize)];
             address += payload_size as usize;
-
-
+            let mut overflow_page = 0;
             pointer += 2;
             count += 1;
             result.push(IndexLeafPageCell{
                 payload_size,
-                payload
+                payload,
             });
         }
         result

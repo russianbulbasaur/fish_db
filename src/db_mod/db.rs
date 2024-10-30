@@ -133,10 +133,16 @@ impl DB{
     fn read_index(&mut self, index:Index, query_col:String){
         let rootpage = self.pager.read_page(index.root_page as u64);
         println!("query param {}",query_col);
-        self.read_index_pages_recursively(rootpage,query_col);
+        let mut results : Vec<IndexEntry> = Vec::new();
+        self.read_index_pages_recursively(rootpage,query_col,&mut results);
+        for result in &results{
+            println!("{} at {}",result.0,result.1);
+        }
+        println!("total {}",results.len());
     }
 
-    fn read_index_pages_recursively(&mut self,curr_page:Page,query_col:String){
+
+    fn read_index_pages_recursively(&mut self,curr_page:Page,query_col:String,result:&mut Vec<IndexEntry>){
         match curr_page.page_type {
             PageType::IndexInteriorPage => {
                 let data_cells = IndexInteriorPage::read_cells(
@@ -148,16 +154,18 @@ impl DB{
                     let query_col_bytes = query_col.as_bytes();
                     println!("extracted key {}",entry.0);
                     if(extracted_key==query_col_bytes){
-                        let page = self.pager.read_page(data_cell.left_child_page_number as u64);
-                        self.read_index_pages_recursively(page,query_col.clone());
                         println!("{} matched at  {}",entry.0,entry.1);
+                        println!("{}","going left");
+                        result.push(entry);
+                        let page = self.pager.read_page(data_cell.left_child_page_number as u64);
+                        self.read_index_pages_recursively(page,query_col.clone(),result);
                     }else if (extracted_key<query_col_bytes) {
                         println!("{}","still scanning");
                         continue;
                     }else if(extracted_key>query_col_bytes){
                         println!("{}","going left");
                         let page = self.pager.read_page(data_cell.left_child_page_number as u64);
-                        self.read_index_pages_recursively(page,query_col);
+                        self.read_index_pages_recursively(page,query_col,result);
                         return;
                     }
                 }
@@ -173,6 +181,7 @@ impl DB{
                     println!("extracted key {}",entry.0);
                     if(extracted_key==query_col_bytes){
                         println!("{} matched at  {}",entry.0,entry.1);
+                        result.push(entry);
                     }
                 }
             }
@@ -302,6 +311,7 @@ fn extract_interior_index_cell<'a>(data_cell:&IndexInteriorPageCell) -> IndexEnt
             panic!("Unknown size {}",data_size_vec[1])
         }
     };
+    count += data_size_vec[1] as usize;
     let entry : IndexEntry = (key,row_id);
     return entry;
 }
